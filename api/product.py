@@ -5,6 +5,7 @@
 支持分页、时间范围筛选和状态筛选。
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import List, Optional
@@ -16,7 +17,7 @@ from ..models.product import ProductDetail, ProductList, ProductListItem, Produc
 logger = logging.getLogger(__name__)
 
 
-def get_product_detail(
+async def get_product_detail(
     client: XianjiaClient,
     product_id: str
 ) -> ProductDetail:
@@ -38,12 +39,17 @@ def get_product_detail(
         ResponseError: 响应数据格式错误
     
     Example:
+        >>> import asyncio
         >>> from xianjia_client import XianjiaClient, Config
-        >>> config = Config(app_key="your_app_key", app_secret="your_app_secret")
-        >>> client = XianjiaClient(config)
-        >>> product = get_product_detail(client, "123456789")
-        >>> print(f"商品标题：{product.title}")
-        >>> print(f"商品价格：{product.price}")
+        >>> 
+        >>> async def main():
+        ...     config = Config(app_key="your_app_key", app_secret="your_app_secret")
+        ...     async with XianjiaClient(config) as client:
+        ...         product = await get_product_detail(client, "123456789")
+        ...         print(f"商品标题：{product.title}")
+        ...         print(f"商品价格：{product.price}")
+        >>> 
+        >>> asyncio.run(main())
     """
     if not product_id or not isinstance(product_id, str):
         raise RequestError("product_id 必须是非空字符串")
@@ -59,21 +65,23 @@ def get_product_detail(
         }
         
         # 发送请求
-        response = client.get(api_path, params=params)
+        response = await client.get(api_path, params=params)
         
         # 检查响应状态
         if not response:
             raise ResponseError("API 响应为空")
         
         # 解析响应数据
-        # 假设响应格式：{"code": 200, "msg": "success", "data": {...}}
-        code = response.get("code", 0)
-        msg = response.get("msg", response.get("message", "Unknown error"))
+        # 假设响应格式：{"code": 0, "message": "success", "data": {...}}
+        # 或：{"code": 200, "msg": "success", "data": {...}}
+        code = response.get("code", response.get("error_code", 0))
+        msg = response.get("message", response.get("msg", response.get("error", "Unknown error")))
         data = response.get("data", {})
         
-        if code != 200:
+        # 检查错误（code != 0 表示错误）
+        if code and code != 0 and code != "0":
             logger.error(f"API 返回错误：code={code}, msg={msg}")
-            raise XianjiaException(f"查询商品详情失败：{msg}", code=code)
+            raise XianjiaException(f"查询商品详情失败：{msg}", code=str(code))
         
         if not data:
             raise ResponseError("商品详情数据为空")
@@ -91,7 +99,7 @@ def get_product_detail(
         raise ResponseError(f"解析商品详情失败：{str(e)}")
 
 
-def list_products(
+async def list_products(
     client: XianjiaClient,
     update_time: Optional[datetime] = None,
     product_status: Optional[ProductPublishStatus] = None,
@@ -119,25 +127,28 @@ def list_products(
         ResponseError: 响应数据格式错误
     
     Example:
+        >>> import asyncio
         >>> from datetime import datetime, timedelta
         >>> from xianjia_client import XianjiaClient, Config
         >>> from xianjia_client.models.product import ProductPublishStatus
         >>> 
-        >>> config = Config(app_key="your_app_key", app_secret="your_app_secret")
-        >>> client = XianjiaClient(config)
+        >>> async def main():
+        ...     config = Config(app_key="your_app_key", app_secret="your_app_secret")
+        ...     async with XianjiaClient(config) as client:
+        ...         # 查询所有商品
+        ...         result = await list_products(client, page_no=1, page_size=20)
+        ...         print(f"总商品数：{result.total}")
+        ...         for item in result.list:
+        ...             print(f"商品：{item.title}, 价格：{item.price}")
+        ...         
+        ...         # 查询出售中的商品
+        ...         result = await list_products(client, product_status=ProductPublishStatus.ONSALE)
+        ...         
+        ...         # 查询最近更新的商品（最近 24 小时）
+        ...         yesterday = datetime.now() - timedelta(days=1)
+        ...         result = await list_products(client, update_time=yesterday)
         >>> 
-        >>> # 查询所有商品
-        >>> result = list_products(client, page_no=1, page_size=20)
-        >>> print(f"总商品数：{result.total}")
-        >>> for item in result.list:
-        ...     print(f"商品：{item.title}, 价格：{item.price}")
-        >>> 
-        >>> # 查询出售中的商品
-        >>> result = list_products(client, product_status=ProductPublishStatus.ONSALE)
-        >>> 
-        >>> # 查询最近更新的商（最近 24 小时）
-        >>> yesterday = datetime.now() - timedelta(days=1)
-        >>> result = list_products(client, update_time=yesterday)
+        >>> asyncio.run(main())
     
     Note:
         - page_size 最大值为 500，超过会自动调整为 500
@@ -184,20 +195,21 @@ def list_products(
                 logger.debug(f"状态筛选：item_status={params['item_status']}")
         
         # 发送请求
-        response = client.get(api_path, params=params)
+        response = await client.get(api_path, params=params)
         
         # 检查响应状态
         if not response:
             raise ResponseError("API 响应为空")
         
         # 解析响应数据
-        code = response.get("code", 0)
-        msg = response.get("msg", response.get("message", "Unknown error"))
+        code = response.get("code", response.get("error_code", 0))
+        msg = response.get("message", response.get("msg", response.get("error", "Unknown error")))
         data = response.get("data", {})
         
-        if code != 200:
+        # 检查错误
+        if code and code != 0 and code != "0":
             logger.error(f"API 返回错误：code={code}, msg={msg}")
-            raise XianjiaException(f"查询商品列表失败：{msg}", code=code)
+            raise XianjiaException(f"查询商品列表失败：{msg}", code=str(code))
         
         # 确保数据格式正确
         if not isinstance(data, dict):
@@ -229,7 +241,7 @@ def list_products(
         raise ResponseError(f"解析商品列表失败：{str(e)}")
 
 
-def list_products_all(
+async def list_products_all(
     client: XianjiaClient,
     update_time: Optional[datetime] = None,
     product_status: Optional[ProductPublishStatus] = None,
@@ -257,14 +269,20 @@ def list_products_all(
         RequestError: 请求参数错误
     
     Example:
+        >>> import asyncio
         >>> from xianjia_client.models.product import ProductPublishStatus
         >>> 
-        >>> # 获取所有出售中的商品
-        >>> products = list_products_all(client, product_status=ProductPublishStatus.ONSALE)
-        >>> print(f"共获取 {len(products)} 个商品")
+        >>> async def main():
+        ...     config = Config(app_key="your_app_key", app_secret="your_app_secret")
+        ...     async with XianjiaClient(config) as client:
+        ...         # 获取所有出售中的商品
+        ...         products = await list_products_all(client, product_status=ProductPublishStatus.ONSALE)
+        ...         print(f"共获取 {len(products)} 个商品")
+        ...         
+        ...         # 获取最多 5 页商品
+        ...         products = await list_products_all(client, max_pages=5)
         >>> 
-        >>> # 获取最多 5 页商品
-        >>> products = list_products_all(client, max_pages=5)
+        >>> asyncio.run(main())
     
     Note:
         - 此方法会自动发起多次 API 请求，注意 API 调用频率限制
@@ -282,7 +300,7 @@ def list_products_all(
             break
         
         # 查询当前页
-        result = list_products(
+        result = await list_products(
             client=client,
             update_time=update_time,
             product_status=product_status,
@@ -300,11 +318,14 @@ def list_products_all(
             break
         
         current_page += 1
+        
+        # 避免过快请求，添加小延迟
+        await asyncio.sleep(0.1)
     
     return all_items
 
 
-def search_products(
+async def search_products(
     client: XianjiaClient,
     keyword: str,
     update_time: Optional[datetime] = None,
@@ -333,10 +354,18 @@ def search_products(
         RequestError: 请求参数错误
     
     Example:
-        >>> # 搜索标题包含"手机"的出售中商品
-        >>> result = search_products(client, keyword="手机", product_status=ProductPublishStatus.ONSALE)
-        >>> for item in result.list:
-        ...     print(f"{item.title} - ¥{item.price}")
+        >>> import asyncio
+        >>> from xianjia_client.models.product import ProductPublishStatus
+        >>> 
+        >>> async def main():
+        ...     config = Config(app_key="your_app_key", app_secret="your_app_secret")
+        ...     async with XianjiaClient(config) as client:
+        ...         # 搜索标题包含"手机"的出售中商品
+        ...         result = await search_products(client, keyword="手机", product_status=ProductPublishStatus.ONSALE)
+        ...         for item in result.list:
+        ...             print(f"{item.title} - ¥{item.price}")
+        >>> 
+        >>> asyncio.run(main())
     """
     if not keyword or not isinstance(keyword, str):
         raise RequestError("keyword 必须是非空字符串")
@@ -361,19 +390,20 @@ def search_products(
             params["item_status"] = product_status.value
         
         # 发送请求
-        response = client.get(api_path, params=params)
+        response = await client.get(api_path, params=params)
         
         # 检查响应
         if not response:
             raise ResponseError("API 响应为空")
         
-        code = response.get("code", 0)
-        msg = response.get("msg", response.get("message", "Unknown error"))
+        code = response.get("code", response.get("error_code", 0))
+        msg = response.get("message", response.get("msg", response.get("error", "Unknown error")))
         data = response.get("data", {})
         
-        if code != 200:
+        # 检查错误
+        if code and code != 0 and code != "0":
             logger.error(f"API 返回错误：code={code}, msg={msg}")
-            raise XianjiaException(f"搜索商品失败：{msg}", code=code)
+            raise XianjiaException(f"搜索商品失败：{msg}", code=str(code))
         
         # 转换为 ProductList 对象
         product_list = ProductList.from_api_response(data, page_no=page_no, page_size=page_size)

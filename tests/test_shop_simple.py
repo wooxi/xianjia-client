@@ -7,21 +7,28 @@
 
 import sys
 import os
+import importlib.util
 from datetime import datetime, timedelta
 
 # 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 from models.shop import ShopInfo
-from api.user import (
-    _parse_datetime,
-    _shop_from_dict,
-    APIError,
-    TokenExpiredError,
-    PermissionDeniedError,
-    ResourceNotFoundError,
-    APIErrorCode
-)
+
+# 直接加载 user.py 模块，避免 __init__.py 的导入问题
+user_module_path = os.path.join(project_root, 'api', 'user.py')
+spec = importlib.util.spec_from_file_location("user_api", user_module_path)
+user_api = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(user_api)
+
+_parse_datetime = user_api._parse_datetime
+_shop_from_dict = user_api._shop_from_dict
+APIError = user_api.APIError
+TokenExpiredError = user_api.TokenExpiredError
+PermissionDeniedError = user_api.PermissionDeniedError
+ResourceNotFoundError = user_api.ResourceNotFoundError
+APIErrorCode = user_api.APIErrorCode
 
 
 def test_shop_info_creation():

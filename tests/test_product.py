@@ -4,9 +4,10 @@
 测试商品数据模型和 API 接口的功能。
 """
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, MagicMock, AsyncMock, patch
 from typing import Any, Dict
 
 from pydantic import ValidationError
@@ -25,6 +26,13 @@ from xianjia_client.api.product import (
     search_products
 )
 from xianjia_client.exceptions import XianjiaException, RequestError, ResponseError
+
+
+def async_test(coro):
+    """装饰器：将异步测试函数包装为同步测试"""
+    def wrapper(*args, **kwargs):
+        return asyncio.run(coro(*args, **kwargs))
+    return wrapper
 
 
 class TestProductPublishStatus(unittest.TestCase):
@@ -370,14 +378,14 @@ class TestProductList(unittest.TestCase):
 class TestGetProductDetail(unittest.TestCase):
     """测试 get_product_detail API 函数"""
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_get_product_detail_success(self, mock_client_class):
+    @async_test
+    async def test_get_product_detail_success(self):
         """测试成功获取商品详情"""
         # 模拟客户端
-        mock_client = Mock()
-        mock_client.get.return_value = {
-            "code": 200,
-            "msg": "success",
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "code": 0,
+            "message": "success",
             "data": {
                 "product_id": "test_123",
                 "title": "测试商品",
@@ -385,58 +393,58 @@ class TestGetProductDetail(unittest.TestCase):
                 "stock": 10,
                 "publish_status": "onsale"
             }
-        }
+        })
         
-        result = get_product_detail(mock_client, "test_123")
+        result = await get_product_detail(mock_client, "test_123")
         
         self.assertIsInstance(result, ProductDetail)
         self.assertEqual(result.product_id, "test_123")
         self.assertEqual(result.title, "测试商品")
         mock_client.get.assert_called_once_with("/item/detail", params={"item_id": "test_123"})
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_get_product_detail_empty_id(self, mock_client_class):
+    @async_test
+    async def test_get_product_detail_empty_id(self):
         """测试空商品 ID"""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         
         with self.assertRaises(RequestError):
-            get_product_detail(mock_client, "")
+            await get_product_detail(mock_client, "")
         
         with self.assertRaises(RequestError):
-            get_product_detail(mock_client, None)
+            await get_product_detail(mock_client, None)
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_get_product_detail_api_error(self, mock_client_class):
+    @async_test
+    async def test_get_product_detail_api_error(self):
         """测试 API 错误响应"""
-        mock_client = Mock()
-        mock_client.get.return_value = {
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
             "code": 404,
-            "msg": "商品不存在"
-        }
+            "message": "商品不存在"
+        })
         
         with self.assertRaises(XianjiaException):
-            get_product_detail(mock_client, "not_exist")
+            await get_product_detail(mock_client, "not_exist")
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_get_product_detail_empty_response(self, mock_client_class):
+    @async_test
+    async def test_get_product_detail_empty_response(self):
         """测试空响应"""
-        mock_client = Mock()
-        mock_client.get.return_value = None
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=None)
         
         with self.assertRaises(ResponseError):
-            get_product_detail(mock_client, "test_123")
+            await get_product_detail(mock_client, "test_123")
 
 
 class TestListProducts(unittest.TestCase):
     """测试 list_products API 函数"""
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_list_products_basic(self, mock_client_class):
+    @async_test
+    async def test_list_products_basic(self):
         """测试基础列表查询"""
-        mock_client = Mock()
-        mock_client.get.return_value = {
-            "code": 200,
-            "msg": "success",
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "code": 0,
+            "message": "success",
             "data": {
                 "total": 50,
                 "list": [
@@ -450,26 +458,26 @@ class TestListProducts(unittest.TestCase):
                     for i in range(1, 21)
                 ]
             }
-        }
+        })
         
-        result = list_products(mock_client, page_no=1, page_size=20)
+        result = await list_products(mock_client, page_no=1, page_size=20)
         
         self.assertIsInstance(result, ProductList)
         self.assertEqual(result.total, 50)
         self.assertEqual(len(result.list), 20)
         mock_client.get.assert_called_once()
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_list_products_with_status(self, mock_client_class):
+    @async_test
+    async def test_list_products_with_status(self):
         """测试带状态筛选"""
-        mock_client = Mock()
-        mock_client.get.return_value = {
-            "code": 200,
-            "msg": "success",
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "code": 0,
+            "message": "success",
             "data": {"total": 10, "list": []}
-        }
+        })
         
-        list_products(
+        await list_products(
             mock_client,
             product_status=ProductPublishStatus.ONSALE,
             page_no=1,
@@ -480,18 +488,18 @@ class TestListProducts(unittest.TestCase):
         call_args = mock_client.get.call_args
         self.assertEqual(call_args[1]["params"]["item_status"], "onsale")
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_list_products_with_time_filter(self, mock_client_class):
+    @async_test
+    async def test_list_products_with_time_filter(self):
         """测试带时间筛选"""
-        mock_client = Mock()
-        mock_client.get.return_value = {
-            "code": 200,
-            "msg": "success",
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "code": 0,
+            "message": "success",
             "data": {"total": 10, "list": []}
-        }
+        })
         
         update_time = datetime(2024, 1, 1, 12, 0, 0)
-        list_products(mock_client, update_time=update_time, page_no=1, page_size=20)
+        await list_products(mock_client, update_time=update_time, page_no=1, page_size=20)
         
         # 验证时间参数
         call_args = mock_client.get.call_args
@@ -499,36 +507,36 @@ class TestListProducts(unittest.TestCase):
         self.assertIn("start_update_time", params)
         self.assertIsInstance(params["start_update_time"], int)
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_list_products_invalid_page_no(self, mock_client_class):
+    @async_test
+    async def test_list_products_invalid_page_no(self):
         """测试无效页码"""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         
         with self.assertRaises(RequestError):
-            list_products(mock_client, page_no=0, page_size=20)
+            await list_products(mock_client, page_no=0, page_size=20)
         
         with self.assertRaises(RequestError):
-            list_products(mock_client, page_no=-1, page_size=20)
+            await list_products(mock_client, page_no=-1, page_size=20)
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_list_products_invalid_page_size(self, mock_client_class):
+    @async_test
+    async def test_list_products_invalid_page_size(self):
         """测试无效每页数量"""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         
         with self.assertRaises(RequestError):
-            list_products(mock_client, page_no=1, page_size=0)
+            await list_products(mock_client, page_no=1, page_size=0)
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_list_products_auto_adjust_page_size(self, mock_client_class):
+    @async_test
+    async def test_list_products_auto_adjust_page_size(self):
         """测试自动调整过大的 page_size"""
-        mock_client = Mock()
-        mock_client.get.return_value = {
-            "code": 200,
-            "msg": "success",
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "code": 0,
+            "message": "success",
             "data": {"total": 10, "list": []}
-        }
+        })
         
-        list_products(mock_client, page_no=1, page_size=1000)
+        await list_products(mock_client, page_no=1, page_size=1000)
         
         # 验证 page_size 被调整为 500
         call_args = mock_client.get.call_args
@@ -538,39 +546,44 @@ class TestListProducts(unittest.TestCase):
 class TestListProductsAll(unittest.TestCase):
     """测试 list_products_all API 函数"""
     
-    @patch('xianjia_client.api.product.list_products')
-    def test_list_products_all_single_page(self, mock_list):
+    @async_test
+    async def test_list_products_all_single_page(self):
         """测试单页结果"""
-        mock_client = Mock()
-        mock_list.return_value = ProductList(
-            total=10,
-            page_no=1,
-            page_size=20,
-            total_pages=1,
-            list=[
-                ProductListItem(
-                    product_id=f"p{i}",
-                    title=f"商品{i}",
-                    price=i * 10,
-                    stock=1,
-                    publish_status=ProductPublishStatus.ONSALE
-                )
-                for i in range(1, 11)
-            ]
-        )
+        mock_client = AsyncMock()
         
-        result = list_products_all(mock_client, page_size=20)
-        
-        self.assertEqual(len(result), 10)
-        mock_list.assert_called_once()
+        # Mock list_products
+        with patch('xianjia_client.api.product.list_products') as mock_list:
+            mock_list.return_value = ProductList(
+                total=10,
+                page_no=1,
+                page_size=20,
+                total_pages=1,
+                list=[
+                    ProductListItem(
+                        product_id=f"p{i}",
+                        title=f"商品{i}",
+                        price=i * 10,
+                        stock=1,
+                        publish_status=ProductPublishStatus.ONSALE
+                    )
+                    for i in range(1, 11)
+                ]
+            )
+            
+            result = await list_products_all(mock_client, page_size=20)
+            
+            self.assertEqual(len(result), 10)
+            mock_list.assert_called_once()
     
-    @patch('xianjia_client.api.product.list_products')
-    def test_list_products_all_multiple_pages(self, mock_list):
+    @async_test
+    async def test_list_products_all_multiple_pages(self):
         """测试多页结果"""
-        mock_client = Mock()
+        mock_client = AsyncMock()
+        call_count = [0]  # 使用列表来追踪调用次数
         
         # 模拟多页响应
-        def side_effect(*args, **kwargs):
+        async def side_effect(*args, **kwargs):
+            call_count[0] += 1
             page_no = kwargs.get('page_no', 1)
             if page_no == 1:
                 return ProductList(
@@ -615,20 +628,19 @@ class TestListProductsAll(unittest.TestCase):
                     ) for i in range(41, 51)]
                 )
         
-        mock_list.side_effect = side_effect
-        
-        result = list_products_all(mock_client, page_size=20)
-        
-        self.assertEqual(len(result), 50)
-        self.assertEqual(mock_list.call_count, 3)
+        with patch('xianjia_client.api.product.list_products', side_effect=side_effect):
+            result = await list_products_all(mock_client, page_size=20)
+            
+            self.assertEqual(len(result), 50)
+            self.assertEqual(call_count[0], 3)  # 应该调用 3 次
     
-    @patch('xianjia_client.api.product.list_products')
-    def test_list_products_all_with_max_pages(self, mock_list):
+    @async_test
+    async def test_list_products_all_with_max_pages(self):
         """测试最大页数限制"""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         
         # 模拟总是有下一页
-        def side_effect(*args, **kwargs):
+        async def side_effect(*args, **kwargs):
             page_no = kwargs.get('page_no', 1)
             return ProductList(
                 total=999,
@@ -644,25 +656,23 @@ class TestListProductsAll(unittest.TestCase):
                 ) for i in range(1, 21)]
             )
         
-        mock_list.side_effect = side_effect
-        
-        result = list_products_all(mock_client, page_size=20, max_pages=3)
-        
-        # 应该只获取 3 页
-        self.assertEqual(mock_list.call_count, 3)
-        self.assertEqual(len(result), 60)  # 3 页 * 20 条
+        with patch('xianjia_client.api.product.list_products', side_effect=side_effect):
+            result = await list_products_all(mock_client, page_size=20, max_pages=3)
+            
+            # 应该只获取 3 页
+            self.assertEqual(len(result), 60)  # 3 页 * 20 条
 
 
 class TestSearchProducts(unittest.TestCase):
     """测试 search_products API 函数"""
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_search_products_success(self, mock_client_class):
+    @async_test
+    async def test_search_products_success(self):
         """测试成功搜索"""
-        mock_client = Mock()
-        mock_client.get.return_value = {
-            "code": 200,
-            "msg": "success",
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "code": 0,
+            "message": "success",
             "data": {
                 "total": 5,
                 "list": [
@@ -675,24 +685,24 @@ class TestSearchProducts(unittest.TestCase):
                     }
                 ]
             }
-        }
+        })
         
-        result = search_products(mock_client, keyword="测试", page_no=1, page_size=20)
+        result = await search_products(mock_client, keyword="测试", page_no=1, page_size=20)
         
         self.assertIsInstance(result, ProductList)
         self.assertEqual(result.total, 5)
         mock_client.get.assert_called_once()
     
-    @patch('xianjia_client.api.product.XianjiaClient')
-    def test_search_products_empty_keyword(self, mock_client_class):
+    @async_test
+    async def test_search_products_empty_keyword(self):
         """测试空关键词"""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         
         with self.assertRaises(RequestError):
-            search_products(mock_client, keyword="", page_no=1, page_size=20)
+            await search_products(mock_client, keyword="", page_no=1, page_size=20)
         
         with self.assertRaises(RequestError):
-            search_products(mock_client, keyword=None, page_no=1, page_size=20)
+            await search_products(mock_client, keyword=None, page_no=1, page_size=20)
 
 
 class TestProductModelEdgeCases(unittest.TestCase):

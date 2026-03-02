@@ -10,7 +10,10 @@ from datetime import datetime
 
 import httpx
 
-from ..models.shop import ShopInfo
+try:
+    from ..models.shop import ShopInfo
+except (ImportError, ValueError):
+    from models.shop import ShopInfo
 
 # 配置日志记录
 logger = logging.getLogger(__name__)
